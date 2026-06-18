@@ -1,0 +1,29 @@
+{
+  "name": "tijarat_retail-management-software",
+  "version": "1.0.0",
+  "description": "An offline-first business operating system for sales, inventory, records, reports, and cloud sync.",
+  "homepage": "https://github.com/ahnufmir/Tijarat_Retail-Management-Software#readme",
+  "bugs": {
+    "url": "https://github.com/ahnufmir/Tijarat_Retail-Management-Software/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ahnufmir/Tijarat_Retail-Management-Software.git"
+  },
+  "license": "ISC",
+  "author": "ahnuf_mir",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "prisma": "^7.8.0"
+  },
+  "dependencies": {
+    "@prisma/client": "^7.8.0",
+    "express": "^5.2.1",
+    "sqlite3": "^6.0.1"
+  }
+}

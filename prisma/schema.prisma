@@ -1,0 +1,245 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum ROLE {
+  ADMIN
+  EMPLOYEE
+}
+
+enum InventoryMovementType {
+  INITIAL_STOCK
+  PURCHASE
+  SALE
+  RETURN
+  DAMAGE
+  ADJUSTMENT
+}
+
+model User {
+  id                      Int               @id @default(autoincrement())
+  role                    ROLE              @default(EMPLOYEE)
+  userName                String            @unique
+  passwordHash            String
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
+  sales                   Sale[]
+  employee                Employee?
+  employeePaymentsCreated EmployeePayment[]
+  expenses                Expense[]
+  cashLedgers             CashLedger[]
+}
+
+// Inventory 
+model Product {
+  id                 Int                 @id @default(autoincrement())
+  name               String
+  color              String?
+  barcode            String?             @unique
+  unitSellingPrice   Int
+  unitCostPrice      Int
+  initialQuantity    Int                 @default(0)
+  currentQuantity    Int                 @default(0)
+  lowStockThreshold  Int                 @default(0)
+  isActive           Boolean             @default(true)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  inventoryMovements InventoryMovement[]
+  saleItems          SaleItem[]
+
+  @@index([name])
+}
+
+model InventoryMovement {
+  id             Int                   @id @default(autoincrement())
+  productId      Int // foreign key 
+  product        Product               @relation(fields: [productId], references: [id], onDelete: Restrict)
+  quantityChange Int
+  movementType   InventoryMovementType
+  saleItemId     Int?
+  saleItem       SaleItem?             @relation(fields: [saleItemId], references: [id])
+  note           String?
+  movementDate   DateTime              @default(now())
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  @@index([productId])
+  @@index([movementDate])
+}
+
+// Sales
+
+enum PaymentMethod {
+  CASH
+  CARD
+  BANK_TRANSFER
+  EASYPAISA
+  JAZZCASH
+  CREDIT
+}
+
+model Sale {
+  id            Int           @id @default(autoincrement())
+  userId        Int //foreign key
+  user          User          @relation(fields: [userId], references: [id])
+  totalAmount   Int
+  paymentMethod PaymentMethod @default(CASH)
+  totalCost     Int           @default(0)
+  totalProfit   Int           @default(0)
+  saleDate      DateTime      @default(now())
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  saleItems     SaleItem[]
+
+  @@index([saleDate])
+  @@index([userId])
+}
+
+model SaleItem {
+  id                 Int                 @id @default(autoincrement())
+  saleId             Int //foreign key
+  sale               Sale                @relation(fields: [saleId], references: [id])
+  productId          Int
+  product            Product             @relation(fields: [productId], references: [id])
+  quantity           Int
+  unitSellingPrice   Int
+  unitCostPrice      Int
+  lineTotal          Int
+  lineCost           Int
+  lineProfit         Int
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  inventoryMovements InventoryMovement[]
+
+  @@index([saleId])
+  @@index([productId])
+}
+
+// Employees
+
+enum CommissionType {
+  SALE_PERCENT
+  PROFIT_PERCENT
+  FIXED_PER_SALE
+}
+
+enum PaymentType {
+  DAILY_WAGE
+  MONTHLY_WAGE
+  COMMISSION
+  BONUS
+  ADVANCE
+  DEDUCTION
+}
+
+enum WageType {
+  MONTHLY
+  DAILY
+}
+
+model Employee {
+  id                     Int                     @id @default(autoincrement())
+  userId                 Int                     @unique
+  user                   User                    @relation(fields: [userId], references: [id])
+  name                   String
+  phone                  String?                 @unique
+  wageType               WageType
+  wageAmount             Int
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  employeeCommissionRule EmployeeCommissionRule?
+  employeePayments       EmployeePayment[]
+}
+
+model EmployeeCommissionRule {
+  id               Int            @id @default(autoincrement())
+  employeeId       Int            @unique
+  employee         Employee       @relation(fields: [employeeId], references: [id])
+  commissionType   CommissionType
+  commissionValue  Int
+  commissionPeriod WageType
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+}
+
+model EmployeePayment {
+  id          Int         @id @default(autoincrement())
+  employeeId  Int
+  employee    Employee    @relation(fields: [employeeId], references: [id])
+  paymentType PaymentType
+  amount      Int
+  periodStart DateTime
+  periodEnd   DateTime?
+  paymentDate DateTime    @default(now())
+  note        String?
+  createdById Int
+  createdBy   User        @relation(fields: [createdById], references: [id])
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+// Expenses
+
+enum ExpenseCategory {
+  ELECTRICITY_BILL
+  GAS_BILL
+  RENT
+  MAINTENANCE
+  INTERNET
+  TRANSPORT
+  OTHER
+}
+
+enum CashDirection {
+  IN
+  OUT
+}
+
+enum CashSourceType {
+  EXPENSE
+  SALE
+  EMPLOYEE_PAYMENT
+  STOCK_ADDED
+  MANUAL_ADJUSTMENT
+}
+
+model Expense {
+  id          Int             @id @default(autoincrement())
+  label       String?
+  amount      Int
+  category    ExpenseCategory
+  note        String?
+  expenseDate DateTime        @default(now())
+  createdById Int
+  createdBy   User            @relation(fields: [createdById], references: [id])
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([expenseDate])
+  @@index([category])
+}
+
+model CashLedger {
+  id          Int            @id @default(autoincrement())
+  direction   CashDirection
+  amount      Int
+  sourceType  CashSourceType
+  sourceId    Int
+  note        String?
+  entryDate   DateTime       @default(now())
+  createdAt   DateTime       @default(now())
+  createdById Int
+  createdBy   User           @relation(fields: [createdById], references: [id])
+  updatedAt   DateTime       @updatedAt
+
+  @@index([entryDate])
+  @@index([sourceType, sourceId])
+}

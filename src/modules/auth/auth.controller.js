@@ -4,7 +4,6 @@ const {
   getCurrentUser,
 } = require("../auth/auth.service");
 const asynHandler = require("../../utils/asyncHandler");
-const prisma = require("../../db/prisma");
 
 const cookieOptions = {
   httpOnly: true,

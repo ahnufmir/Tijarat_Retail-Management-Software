@@ -40,9 +40,10 @@ model User {
 // Inventory 
 model Product {
   id                 Int                 @id @default(autoincrement())
-  name               String
+  name               String?
+  type               String?
   color              String?
-  barcode            String?             @unique
+  barcode            String             @unique
   unitSellingPrice   Int
   unitCostPrice      Int
   initialQuantity    Int                 @default(0)

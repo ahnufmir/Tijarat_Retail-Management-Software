@@ -1,5 +1,6 @@
 const prisma = require("../../db/prisma");
 const throwError = require("../../utils/errorHandling");
+const { createInventoryMovement } = require("../inventory/inv.service");
 
 const createProduct = async (
   name,
@@ -11,6 +12,7 @@ const createProduct = async (
   initialQuantity,
   currentQuantity,
   lowstock,
+  note,
 ) => {
   const existingProduct = await prisma.product.findUnique({
     where: {
@@ -18,7 +20,13 @@ const createProduct = async (
     },
   });
   if (existingProduct) throwError("Product Already Exists", 400);
-  if (sp < 0 || cp < 0 || initialQuantity < 0 || lowstock < 0 || currentQuantity < 0 )
+  if (
+    sp < 0 ||
+    cp < 0 ||
+    initialQuantity < 0 ||
+    lowstock < 0 ||
+    currentQuantity < 0
+  )
     throwError("Price or Quantity couldnot be less than zero", 400);
   if (sp < cp) throwError("Selling Price cant be less than cost price", 400);
   const product = await prisma.product.create({
@@ -33,6 +41,12 @@ const createProduct = async (
       currentQuantity: currentQuantity,
       lowStockThreshold: lowstock,
     },
+  });
+  await createInventoryMovement({
+    productBarcode: product.barcode,
+    quantityChange: product.currentQuantity,
+    movementType: "INITIAL_STOCK",
+    note: note,
   });
   return product;
 };
@@ -68,6 +82,11 @@ const getProductByBarcode = async (barcode) => {
 
 const updateProduct = async (barcode, updateData) => {
   const product = await getProductByBarcode(barcode);
+  if (product.isActive === false)
+    throwError(
+      400,
+      "Product is not active (i.e its deleted). Make it active to update",
+    );
 
   const dataToUpdate = {};
 
@@ -105,8 +124,9 @@ const updateProduct = async (barcode, updateData) => {
   }
 
   // assign only after validation
-  if (updateData.unitCostPrice !== undefined)
+  if (updateData.unitCostPrice !== undefined) {
     dataToUpdate.unitCostPrice = updateData.unitCostPrice;
+  }
 
   if (updateData.unitSellingPrice !== undefined)
     dataToUpdate.unitSellingPrice = updateData.unitSellingPrice;
@@ -121,12 +141,24 @@ const updateProduct = async (barcode, updateData) => {
   return updatedProduct;
 };
 
-const deleteProduct = async (barCode) => {
-  await getProductByBarcode(barCode);
-  const deletedProd = await prisma.product.delete({
+const deleteProduct = async (barcode, note) => {
+  const product = await getProductByBarcode(barcode);
+  if (product.isActive === false)
+    throwError("Product is ALREADY not active (i.e. its already deleted)", 400);
+
+  const dataToUpdate = {};
+  dataToUpdate.isActive = false;
+  const deletedProd = await prisma.product.update({
     where: {
-      barcode: barCode,
+      barcode,
     },
+    data: dataToUpdate,
+  });
+  await createInventoryMovement({
+    productBarcode: deletedProd.barcode,
+    quantityChange: deletedProd.currentQuantity,
+    movementType: "DELETED",
+    note: note,
   });
   return deletedProd;
 };
@@ -140,25 +172,50 @@ const lowerStockProducts = async () => {
   return products;
 };
 
-const setProductStock = async (barCode, num) => {
-  if (num == null || isNaN(num)) {
+const setProductStock = async (barCode, num, movementType, note) => {
+  if (num === null || isNaN(num) || movementType === null || num < 0) {
     throwError("Invalid quantity", 400);
   }
-  if (num < 0) throwError("Quantity cant be less than zero", 400);
+  const product = await getProductByBarcode(barCode);
+  if (product.isActive === false)
+    throwError(
+      "Product is not active (i.e its deleted). Make it active to update",
+      400,
+    );
+  if (num < product.currentQuantity)
+    throwError(
+      "New Quantity couldnot be less than Product's Current Quantity",
+      400,
+    );
+  const dataToUpdate = {};
+  dataToUpdate.currentQuantity = num;
   const updatedProduct = await prisma.product.update({
     where: {
       barcode: barCode,
     },
-    data: { currentQuantity: num },
+    data: dataToUpdate,
+  });
+  const quantityDifference = num - product.currentQuantity;
+  await createInventoryMovement({
+    productBarcode: updatedProduct.barcode,
+    quantityChange: quantityDifference,
+    movementType: movementType,
+    note: note,
   });
   return updatedProduct;
 };
 
-const adjustProductStock = async (barCode, num) => {
-  if (num == null || isNaN(num) || num < 0) {
+// Requires an admin to do this
+const adjustProductStock = async (barCode, num, movementType, note) => {
+  if (num === null || isNaN(num) || movementType === null) {
     throwError("Invalid quantity", 400);
   }
   const product = await getProductByBarcode(barCode);
+  if (product.isActive === false)
+    throwError(
+      "Product is not active (i.e its deleted). Make it active to update",
+      400,
+    );
   const newQuantity = product.currentQuantity + num;
   if (newQuantity < 0) {
     throwError("Stock cannot go below zero", 400);
@@ -168,6 +225,12 @@ const adjustProductStock = async (barCode, num) => {
       barcode: barCode,
     },
     data: { currentQuantity: newQuantity },
+  });
+  await createInventoryMovement({
+    productBarcode: updatedProduct.barcode,
+    quantityChange: num,
+    movementType: movementType,
+    note: note,
   });
   return updatedProduct;
 };

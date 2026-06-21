@@ -45,10 +45,10 @@ productRouter.delete("/delete/:barcode", deleteProductHandler);
 */
 
 // Set stock manually (fix inventory)
-productRouter.patch("/stock/set/:barcode/:num", setProductStockHandler);
+productRouter.patch("/stock/set/:barcode", setProductStockHandler);
 
 // Adjust stock (sale or purchase update)
-productRouter.patch("/stock/adjust/:barcode/:num", adjustProductStockHandler);
+productRouter.patch("/stock/adjust/:barcode", adjustProductStockHandler);
 
 // Get low stock products (inventory alert system)
 productRouter.get("/stock/low", lowerStocksHandler);

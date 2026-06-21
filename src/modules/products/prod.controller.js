@@ -23,14 +23,14 @@ const createProductHandler = asynHandler(async (req, res) => {
     initialQuantity,
     currentQuantity,
     lowStockThreshold,
+    note
   } = req.body;
   if (
     isNaN(unitSellingPrice) ||
     isNaN(unitCostPrice) ||
-    unitSellingPrice == null ||
-    unitCostPrice == null ||
-    isNaN(barcode) ||
-    barcode == null
+    unitSellingPrice === null ||
+    unitCostPrice === null ||
+    barcode === null
   )
     return sendResponse(
       res,
@@ -49,8 +49,9 @@ const createProductHandler = asynHandler(async (req, res) => {
     initialQuantity,
     currentQuantity,
     lowStockThreshold,
+    note
   );
-  sendResponse(res, 201, true, "Admin Registed Successfully", product);
+  sendResponse(res, 201, true, "Product Added Successfully", product);
 });
 
 const getAllProductsByTypeHandler = asynHandler(async (req, res) => {
@@ -99,7 +100,8 @@ const getProductByBarCodeHandler = asynHandler(async (req, res) => {
 
 const deleteProductHandler = asynHandler(async (req, res) => {
   const barcode = req.params.barcode
-  const product = await deleteProduct(barcode);
+  const {note} = req.body;
+  const product = await deleteProduct(barcode,note);
   sendResponse(res, 204, true, "Product deleted succesfully", product);
 });
 
@@ -110,14 +112,14 @@ const lowerStocksHandler = asynHandler(async (req, res) => {
 
 const setProductStockHandler = asynHandler(async (req, res) => {
   const barcode = req.params.barcode
-  const num = Number(req.params.num);
-  const product = await setProductStock(barcode, num);
+  const {num,movementType,note} = req.body;
+  const product = await setProductStock(barcode, num, movementType, note);
   sendResponse(res, 200, true, "Product Stock Set Successfully", product);
 });
 const adjustProductStockHandler = asynHandler(async (req, res) => {
   const barcode = req.params.barcode
-  const num = Number(req.params.num);
-  const product = await adjustProductStock(barcode, num);
+  const {num,movementType,note} = req.body;
+  const product = await adjustProductStock(barcode,  num, movementType, note);
   sendResponse(res, 200, true, "Product Stock Adjusted Successfully", product);
 });
 

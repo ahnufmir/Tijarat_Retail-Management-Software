@@ -21,6 +21,7 @@ enum InventoryMovementType {
   RETURN
   DAMAGE
   ADJUSTMENT
+  DELETED
 }
 
 model User {
@@ -43,10 +44,10 @@ model Product {
   name               String?
   type               String?
   color              String?
-  barcode            String             @unique
+  barcode            String              @unique
   unitSellingPrice   Int
   unitCostPrice      Int
-  initialQuantity    Int                 @default(0)
+  initialQuantity    Int?                @default(0)
   currentQuantity    Int                 @default(0)
   lowStockThreshold  Int                 @default(0)
   isActive           Boolean             @default(true)
@@ -60,8 +61,8 @@ model Product {
 
 model InventoryMovement {
   id             Int                   @id @default(autoincrement())
-  productId      Int // foreign key 
-  product        Product               @relation(fields: [productId], references: [id], onDelete: Restrict)
+  productBarcode String //foreign key
+  product        Product               @relation(fields: [productBarcode], references: [barcode], onDelete: Restrict)
   quantityChange Int
   movementType   InventoryMovementType
   saleItemId     Int?
@@ -71,7 +72,7 @@ model InventoryMovement {
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
 
-  @@index([productId])
+  @@index([productBarcode])
   @@index([movementDate])
 }
 

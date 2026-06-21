@@ -1,5 +1,5 @@
 const express = require("express");
-const router = express.Router();
+const productRouter = express.Router();
 
 const {
   createProductHandler,
@@ -20,37 +20,37 @@ const {
 */
 
 // Create product
-router.post("/products", createProductHandler);
+productRouter.post("/", createProductHandler);
 
 // Get products by type (e.g. shirts, pants)
-router.get("/products/type/:type", getAllProductsByTypeHandler);
+productRouter.get("/type/:type", getAllProductsByTypeHandler);
 
 // Get product by ID (internal use)
-router.get("/products/id/:id", getProductByIdHandler);
+productRouter.get("/id/:id", getProductByIdHandler);
 
 // Get product by barcode (MAIN POS FEATURE)
-router.get("/products/barcode/:barcode", getProductByBarCodeHandler);
+productRouter.get("/barcode/:barcode", getProductByBarCodeHandler);
 
 // Update product (admin)
-router.put("/products/:barcode", updateProductHandler);
+productRouter.put("/update/:barcode", updateProductHandler);
 
 // Delete product (admin only)
-router.delete("/products/:barcode", deleteProductHandler);
+productRouter.delete("/delete/:barcode", deleteProductHandler);
 
 
 /*
-========================================
+======================================== 
 🟡 INVENTORY / STOCK MANAGEMENT
 ========================================
 */
 
 // Set stock manually (fix inventory)
-router.patch("/products/stock/set/:barcode/:num", setProductStockHandler);
+productRouter.patch("/stock/set/:barcode/:num", setProductStockHandler);
 
 // Adjust stock (sale or purchase update)
-router.patch("/products/stock/adjust/:barcode/:num", adjustProductStockHandler);
+productRouter.patch("/stock/adjust/:barcode/:num", adjustProductStockHandler);
 
 // Get low stock products (inventory alert system)
-router.get("/products/stock/low", lowerStocksHandler);
+productRouter.get("/stock/low", lowerStocksHandler);
 
-module.exports = router;
+module.exports = productRouter;

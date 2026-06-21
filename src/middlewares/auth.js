@@ -1,4 +1,5 @@
 const { validateToken } = require("../modules/auth/auth.service");
+const sendResponse = require("../utils/sendResponse")
 
 
 function checkForCookieAuhtentication(cookieName){
@@ -16,6 +17,26 @@ function checkForCookieAuhtentication(cookieName){
     })
 }
 
+function requireAuth(req, res, next) {
+  if (!req.user) 
+    sendResponse(res,401,false,"Authentication required");
+
+  return next();
+}
+
+
+function requireAdmin(req, res, next) {
+  if (!req.user)
+    sendResponse(res,401,false,"Authentication required");
+
+  if (req.user.role !== "ADMIN") 
+    sendResponse(res,403,false,"Admin access required");
+
+  return next();
+}
+
 module.exports = {
-    checkForCookieAuhtentication
+    checkForCookieAuhtentication,
+    requireAuth,
+    requireAdmin
 }

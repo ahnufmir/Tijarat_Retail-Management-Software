@@ -122,8 +122,8 @@ const adjustProductStockHandler = asynHandler(async (req, res) => {
 });
 
 const updateProductHandler = asynHandler(async (req, res) => {
+  const barcode = req.params.barcode;
   const {
-    barcode,
     name,
     type,
     color,

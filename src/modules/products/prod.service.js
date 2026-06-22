@@ -84,8 +84,8 @@ const updateProduct = async (barcode, updateData) => {
   const product = await getProductByBarcode(barcode);
   if (product.isActive === false)
     throwError(
-      400,
       "Product is not active (i.e its deleted). Make it active to update",
+       400,
     );
 
   const dataToUpdate = {};
@@ -173,7 +173,7 @@ const lowerStockProducts = async () => {
 };
 
 const setProductStock = async (barCode, num, movementType, note) => {
-  if (num === null || isNaN(num) || movementType === null || num < 0) {
+  if (num == null || isNaN(num) || movementType == null || num < 0) {
     throwError("Invalid quantity", 400);
   }
   const product = await getProductByBarcode(barCode);
@@ -207,7 +207,7 @@ const setProductStock = async (barCode, num, movementType, note) => {
 
 // Requires an admin to do this
 const adjustProductStock = async (barCode, num, movementType, note) => {
-  if (num === null || isNaN(num) || movementType === null) {
+  if (num == null || isNaN(num) || movementType == null) {
     throwError("Invalid quantity", 400);
   }
   const product = await getProductByBarcode(barCode);

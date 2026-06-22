@@ -1,12 +1,14 @@
-require('dotenv').config() 
+require("dotenv").config();
 
-const express = require('express');
+const express = require("express");
 const path = require("path");
 const router = require("../src/modules/auth/auth.routes");
-const productRouter = require("../src/modules/products/prod.routes")
-const {checkForCookieAuhtentication} = require("../src/middlewares/auth")
+const productRouter = require("../src/modules/products/prod.routes");
+const inventoryRouter = require("../src/modules/inventory/inv.routes");
+const { checkForCookieAuhtentication } = require("../src/middlewares/auth");
+const errorMiddleware = require("../src/middlewares/ error");
 
-const cookieParser = require('cookie-parser');
+const cookieParser = require("cookie-parser");
 
 const app = express();
 const PORT = 8000;
@@ -16,9 +18,11 @@ app.use(cookieParser());
 app.use(checkForCookieAuhtentication("token"));
 app.use("/v0/auth", router);
 app.use("/v0/products", productRouter);
+app.use("/v0/inventory", inventoryRouter);
 
+// Error handling middleware
+app.use(errorMiddleware);
 
-
-app.listen(PORT, ()=>{
-    console.log(`Server is live on Port ${PORT}`)
-})
+app.listen(PORT, () => {
+  console.log(`Server is live on Port ${PORT}`);
+});

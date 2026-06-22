@@ -28,9 +28,9 @@ const createProductHandler = asynHandler(async (req, res) => {
   if (
     isNaN(unitSellingPrice) ||
     isNaN(unitCostPrice) ||
-    unitSellingPrice === null ||
-    unitCostPrice === null ||
-    barcode === null
+    unitSellingPrice == null ||
+    unitCostPrice == null ||
+    barcode == null
   )
     return sendResponse(
       res,

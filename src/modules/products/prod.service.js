@@ -74,7 +74,17 @@ const getProductByBarcode = async (barcode) => {
   const product = await prisma.product.findUnique({
     where: {
       barcode,
+      isActive:true
     },
+    select:{
+      name:true,
+      type:true,
+      color:true,
+      unitSellingPrice:true,
+      unitCostPrice:true,
+      currentQuantity:true,
+      isActive:true
+    }
   });
   if (!product) throwError("Product doesnot Exists", 400);
   return product;

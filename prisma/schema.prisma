@@ -84,6 +84,8 @@ enum PaymentMethod {
   BANK_TRANSFER
   EASYPAISA
   JAZZCASH
+  SADAYPAY
+  NAYAPAY
   CREDIT
 }
 
@@ -108,8 +110,8 @@ model SaleItem {
   id                 Int                 @id @default(autoincrement())
   saleId             Int //foreign key
   sale               Sale                @relation(fields: [saleId], references: [id])
-  productId          Int
-  product            Product             @relation(fields: [productId], references: [id])
+  productBarcode     String
+  product            Product             @relation(fields: [productBarcode], references: [barcode])
   quantity           Int
   unitSellingPrice   Int
   unitCostPrice      Int
@@ -121,7 +123,7 @@ model SaleItem {
   inventoryMovements InventoryMovement[]
 
   @@index([saleId])
-  @@index([productId])
+  @@index([productBarcode])
 }
 
 // Employees

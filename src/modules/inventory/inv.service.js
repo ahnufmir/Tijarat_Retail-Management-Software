@@ -6,7 +6,7 @@ const createInventoryMovement = async ({
   quantityChange,
   movementType,
   note,
-}) => {
+},  tx = null) => {
   const quantity = Number(quantityChange);
   if (
     !productBarcode ||
@@ -18,7 +18,9 @@ const createInventoryMovement = async ({
   )
     throwError("Invalid Parameter(s)", 400);
   if (quantity === 0) throwError("Quantity cannot be zero", 400);
-  await prisma.inventoryMovement.create({
+
+  const client = tx || prisma;
+  await client.inventoryMovement.create({
     data: {
       productBarcode: productBarcode,
       quantityChange: quantity,

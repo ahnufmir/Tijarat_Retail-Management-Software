@@ -2,6 +2,7 @@ const {
   registerAdmin,
   userLogin,
   getCurrentUser,
+  registerUser,
 } = require("../auth/auth.service");
 const asynHandler = require("../../utils/asyncHandler");
 
@@ -28,6 +29,28 @@ const registerAdminHandler = asynHandler(async (req, res) => {
   return res.status(201).json({
     success: true,
     message: "Admin Registed Successfully",
+    data: user,
+  });
+});
+
+const registerUserHandler = asynHandler(async (req, res) => {
+  const { userName, password } = req.body;
+  if (!userName || !password) {
+    return res.status(400).json({
+      success: false,
+      message: "Either Username or password doesnot match",
+    });
+  }
+  if (password.length < 6) {
+    return res.status(400).json({
+      success: false,
+      message: "Password Length should be greater than 6",
+    });
+  }
+  const user = await registerUser({ userName, password });
+  return res.status(201).json({
+    success: true,
+    message: "Employee Registed Successfully",
     data: user,
   });
 });
@@ -70,5 +93,6 @@ module.exports = {
     registerAdminHandler,
     loginUserHandler,
     logoutHandler,
-    getInfoAboutUserH
+    getInfoAboutUserH,
+    registerUserHandler 
 }

@@ -6,7 +6,7 @@ const SECRET = process.env.SECRET;
 
 function createTokenForUser(user){
     const payload = {
-        _id : user.id,
+        id : user.id,
         name : user.name,
         role : user.role
     }
@@ -14,7 +14,7 @@ function createTokenForUser(user){
     return token; 
 }
 
-const registerAdmin = async(userName, password)=>{
+const registerAdmin = async({userName, password})=>{
     const existingAdmin = await prisma.user.findFirst({
        where : {
         role : "ADMIN"
@@ -46,7 +46,35 @@ const registerAdmin = async(userName, password)=>{
     return user;
 }
 
-const userLogin = async(userName, password) =>{
+const registerUser = async({userName, password})=>{
+    const existingUser = await prisma.user.findUnique({
+        where:{
+            userName : userName
+        }
+    }
+    )
+    if(existingUser){
+        throwError("User Exists Already", 400);
+    }
+    const passwordHash = await bcrypt.hash(password, 15);
+    const user = await prisma.user.create({
+        data:{
+            userName,
+            passwordHash,
+            role : "EMPLOYEE"
+        },
+        select : {
+            id : true,
+            userName: true,
+            role: true,
+            createdAt: true,
+        }
+    });
+    return user;
+}
+
+
+const userLogin = async({userName, password}) =>{
     const user = await prisma.user.findUnique({
         where :{
             userName
@@ -97,5 +125,6 @@ module.exports = {
     registerAdmin,
     userLogin,
     getCurrentUser,
-    validateToken
+    validateToken,
+    registerUser
 }

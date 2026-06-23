@@ -22,6 +22,8 @@ enum InventoryMovementType {
   DAMAGE
   ADJUSTMENT
   DELETED
+  SALE_CANCEL
+  SALE_RETURN
 }
 
 model User {
@@ -89,14 +91,23 @@ enum PaymentMethod {
   CREDIT
 }
 
+enum SALESTATUS {
+  ACTIVE
+  CANCELLED
+  RETURNED
+  PARTIAL_RETURN
+}
+
 model Sale {
   id            Int           @id @default(autoincrement())
+  invoice       String        @unique
   userId        Int //foreign key
   user          User          @relation(fields: [userId], references: [id])
   totalAmount   Int
   paymentMethod PaymentMethod @default(CASH)
   totalCost     Int           @default(0)
   totalProfit   Int           @default(0)
+  status        SALESTATUS    @default(ACTIVE)
   saleDate      DateTime      @default(now())
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt

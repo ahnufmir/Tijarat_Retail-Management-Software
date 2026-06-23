@@ -12,6 +12,7 @@ const {
   adjustProductStockHandler,
   updateProductHandler,
 } = require("../products/prod.controller");
+const { requireAdmin } = require("../../middlewares/auth");
 
 /*
 ========================================
@@ -48,7 +49,7 @@ productRouter.delete("/delete/:barcode", deleteProductHandler);
 productRouter.patch("/stock/set/:barcode", setProductStockHandler);
 
 // Adjust stock (sale or purchase update)
-productRouter.patch("/stock/adjust/:barcode", adjustProductStockHandler);
+productRouter.patch("/stock/adjust/:barcode", requireAdmin, adjustProductStockHandler);
 
 // Get low stock products (inventory alert system)
 productRouter.get("/stock/low", lowerStocksHandler);

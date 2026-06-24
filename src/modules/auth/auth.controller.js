@@ -12,11 +12,11 @@ const cookieOptions = {
 };
 
 const registerAdminHandler = asynHandler(async (req, res) => {
-  const { userName, password } = req.body;
-  if (!userName || !password) {
+  const { userName, password, adminRegPass } = req.body;
+  if (!userName || !password || !adminRegPass ) {
     return res.status(400).json({
       success: false,
-      message: "Either Username or password doesnot match",
+      message: "Either Username or password or admin registeration password is not entered",
     });
   }
   if (password.length < 6) {
@@ -25,7 +25,7 @@ const registerAdminHandler = asynHandler(async (req, res) => {
       message: "Password Length should be greater than 6",
     });
   }
-  const user = await registerAdmin({ userName, password });
+  const user = await registerAdmin({ userName, password, adminRegPass });
   return res.status(201).json({
     success: true,
     message: "Admin Registed Successfully",

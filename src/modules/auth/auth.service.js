@@ -3,6 +3,7 @@ const prisma = require("../../db/prisma");
 const throwError = require("../../utils/errorHandling");
 const bcrypt = require('bcrypt');
 const SECRET = process.env.SECRET;
+const ADMIN_KEY = process.env.ADMIN_KEY;
 
 function createTokenForUser(user){
     const payload = {
@@ -14,7 +15,7 @@ function createTokenForUser(user){
     return token; 
 }
 
-const registerAdmin = async({userName, password})=>{
+const registerAdmin = async({userName, password, adminRegPass})=>{
     const existingAdmin = await prisma.user.findFirst({
        where : {
         role : "ADMIN"
@@ -29,6 +30,7 @@ const registerAdmin = async({userName, password})=>{
     if(existingAdmin || existingUser){
         throwError("Admin or User Exists Already", 400);
     }
+    if(adminRegPass !== ADMIN_KEY) throwError("Admin Registeration Password is Incorrect", 403);
     const passwordHash = await bcrypt.hash(password, 15);
     const user = await prisma.user.create({
         data:{

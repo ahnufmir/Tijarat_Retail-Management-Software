@@ -7,6 +7,7 @@ const {
   getSaleById,
   returnSale,
   cancelSale,
+  getSalesByDateRange,
 } = require("../sales/sales.service");
 
 function validateInvoiceStructure(invoice) {
@@ -34,15 +35,14 @@ function validateInvoiceStructure(invoice) {
 }
 
 const createSaleHandler = asynHandler(async (req, res) => {
-  const userId = req.user.id;
+  const { paymentMethod, items, userId, note } = req.body;
   if (!userId)
     return sendResponse(
       res,
       403,
       false,
-      "UserId not Found (User is not Logged In)",
+      "UserId not Found (User is not Registered)",
     );
-  const { paymentMethod, items,note } = req.body;
   const allowedPaymentMethods = [
     "CASH",
     "CARD",
@@ -58,7 +58,7 @@ const createSaleHandler = asynHandler(async (req, res) => {
   }
   if (paymentMethod == null || items == null)
     return sendResponse(res, 400, "Payment Method or Sale Items not Found");
-  const saleItems = await createSale(paymentMethod, items, userId,note);
+  const saleItems = await createSale(paymentMethod, items, userId, note);
   return sendResponse(res, 200, true, "Sales Created Successfully", saleItems);
 });
 
@@ -71,6 +71,20 @@ const getTodaySalesHandler = asynHandler(async (req, res) => {
     "Today's Sales Retrieved Successfully",
     sales,
   );
+});
+
+const getSalesByDateRangeHandler = asynHandler(async (req, res) => {
+  const { startDate, endDate } = req.query;
+  if (
+    !startDate ||
+    startDate.trim() === "" ||
+    !endDate ||
+    endDate.trim() === ""
+  )
+    return sendResponse(res, 400, false, "Invalid Date");
+
+  const sales = await getSalesByDateRange(startDate,endDate);
+  return sendResponse(res,200,true,"Sales Fetch Successfully",sales);
 });
 
 const getSaleByIdHandler = asynHandler(async (req, res) => {
@@ -98,7 +112,7 @@ const cancelSaleHandler = asynHandler(async (req, res) => {
   const note = req.body;
   if (invoice == null || invoice === "")
     return sendResponse(res, 400, false, "Invalid Invoice");
-    const validation = validateInvoiceStructure(invoice);
+  const validation = validateInvoiceStructure(invoice);
   if (!validation.valid) {
     return sendResponse(res, 400, false, validation.message);
   }
@@ -111,7 +125,7 @@ const returnSaleHandler = asynHandler(async (req, res) => {
   const { items, note } = req.body;
   if (invoice == null || invoice === "")
     return sendResponse(res, 400, false, "Invalid Invoice");
-    const validation = validateInvoiceStructure(invoice);
+  const validation = validateInvoiceStructure(invoice);
   if (!validation.valid) {
     return sendResponse(res, 400, false, validation.message);
   }
@@ -126,4 +140,5 @@ module.exports = {
   getSaleByInvoiceHandler,
   cancelSaleHandler,
   returnSaleHandler,
+  getSalesByDateRangeHandler
 };

@@ -163,10 +163,11 @@ model Employee {
   id                     Int                     @id @default(autoincrement())
   userId                 Int                     @unique
   user                   User                    @relation(fields: [userId], references: [id])
-  name                   String
+  name                   String                  @unique
   phone                  String?                 @unique
   wageType               WageType
   wageAmount             Int
+  isActive               Boolean                 @default(true)
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
   employeeCommissionRule EmployeeCommissionRule?

@@ -1,3 +1,4 @@
+const { it } = require("node:test");
 const prisma = require("../../db/prisma");
 const throwError = require("../../utils/errorHandling");
 const {
@@ -326,7 +327,6 @@ const checkReturnHistory = async (
   }
 
   for (let i = 0; i < finalItemsList.length; i++) {
-
     const barcode = finalItemsList[i].productBarcode;
 
     const saleItem = salesMap[barcode];
@@ -351,7 +351,7 @@ const checkReturnHistory = async (
   return finalItemsList;
 };
 
-const returnSale = async (saleInvoice, items, note) => {
+const returnSale = async (saleInvoice, items, notes = null) => {
   const sale = await prisma.sale.findUnique({
     where: {
       invoice: saleInvoice,
@@ -433,7 +433,7 @@ const returnSale = async (saleInvoice, items, note) => {
     finalItemsList,
     salesMap,
     failedItems,
-    saleInvoice
+    saleInvoice,
   );
   if (FINALE.length === 0) {
     throwError("No valid items to return", 400);
@@ -441,7 +441,27 @@ const returnSale = async (saleInvoice, items, note) => {
 
   //================================================================================
 
-  const movementType = "SALE_RETURN";
+  // -------------- JUST ADDED NOW TO CALCULATE COMMISSION
+  let profit = 0;
+  let sales = 0;
+  let cost = 0;
+  for (let index = 0; index < FINALE.length; index++) {
+    const saleItem = salesMap[FINALE[index].productBarcode];
+    const returnedQty = FINALE[index].quantity;
+    profit += (saleItem.lineProfit / saleItem.quantity) * returnedQty;
+    cost += (saleItem.lineCost / saleItem.quantity) * returnedQty;
+    sales += (saleItem.lineTotal / saleItem.quantity) * returnedQty;
+  }
+
+  const newProfit = sale.totalProfit - profit;
+  const newCost = sale.totalCost - cost;
+  const newAmount = sale.totalAmount - sales;
+  // -----------------------------------
+  const movementType = "SALES_RETURN";
+
+  const newStatus =
+    newAmount <= 0 ? SALESTATUS.RETURNED : SALESTATUS.PARTIAL_RETURN;
+
   const result = await prisma.$transaction(async (tx) => {
     for (let i = 0; i < FINALE.length; i++) {
       let barcode = FINALE[i].productBarcode;
@@ -470,7 +490,11 @@ const returnSale = async (saleInvoice, items, note) => {
         id: saleId,
       },
       data: {
-        status: SALESTATUS.PARTIAL_RETURN,
+        status: newStatus,
+        //----------- TO calculate commission
+        totalAmount: newAmount,
+        totalCost: newCost,
+        totalProfit: newProfit,
       },
     });
     return updatedSale;
@@ -490,6 +514,75 @@ const returnSale = async (saleInvoice, items, note) => {
 //   if (check) failedItems.push(items);
 // }
 
+const getSalesByDateRange = async (startDate, endDate) => {
+  const start = new Date(startDate);
+  start.setHours(0, 0, 0, 0);
+
+  const end = new Date(endDate);
+  end.setHours(23, 59, 59, 999);
+  const totalSales = await prisma.sale.aggregate({
+    where: {
+      saleDate: {
+        gte: start,
+        lte: end,
+      },
+    },
+    _sum: {
+      totalCost: true,
+      totalAmount: true,
+      totalProfit: true,
+    },
+  });
+  return totalSales;
+};
+
+const getValidSalesByDateRange = async (startDate, endDate) => {
+  const start = new Date(startDate);
+  start.setHours(0, 0, 0, 0);
+
+  const end = new Date(endDate);
+  end.setHours(23, 59, 59, 999);
+  const totalSales = await prisma.sale.aggregate({
+    where: {
+      saleDate: {
+        gte: start,
+        lte: end,
+      },
+      status: { in: ["ACTIVE", "PARTIAL_RETURN"] },
+    },
+    _sum: {
+      totalCost: true,
+      totalAmount: true,
+      totalProfit: true,
+    },
+    _count: {
+      id: true,
+    },
+  });
+  return totalSales;
+};
+const getValidSalesByDateRangeAndId = async (id, startDate, endDate) => {
+  const start = new Date(startDate);
+  start.setHours(0, 0, 0, 0);
+
+  const end = new Date(endDate);
+  end.setHours(23, 59, 59, 999);
+  const totalSales = await prisma.sale.aggregate({
+    where: {
+      saleDate: {
+        gte: start,
+        lte: end,
+      },
+      status: { in: ["ACTIVE", "PARTIAL_RETURN"] },
+      userId:id
+    },
+    _count: {
+      id: true,
+    },
+  });
+  return totalSales;
+};
+
 module.exports = {
   createSale,
   getTodaySales,
@@ -497,4 +590,7 @@ module.exports = {
   getSaleByInvoice,
   cancelSale,
   returnSale,
+  getSalesByDateRange,
+  getValidSalesByDateRange,
+  getValidSalesByDateRangeAndId 
 };

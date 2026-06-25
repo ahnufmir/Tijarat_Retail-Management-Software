@@ -567,21 +567,27 @@ const getValidSalesByDateRangeAndId = async (id, startDate, endDate) => {
 
   const end = new Date(endDate);
   end.setHours(23, 59, 59, 999);
-  const totalSales = await prisma.sale.aggregate({
-    where: {
-      saleDate: {
-        gte: start,
-        lte: end,
-      },
-      status: { in: ["ACTIVE", "PARTIAL_RETURN"] },
-      userId:id
+  const totalSales = await prisma.sale.findMany({
+  where: {
+    saleDate: {
+      gte: start,
+      lte: end,
     },
-    _count: {
-      id: true,
+    status: {
+      in: ["ACTIVE", "PARTIAL_RETURN"],
     },
-  });
-  return totalSales;
-};
+    userId: id,
+  },
+  include: {
+    saleItems: {
+      include: {
+        product: true
+      }
+    }
+  },
+});
+return totalSales;
+}
 
 module.exports = {
   createSale,

@@ -122,6 +122,10 @@ function validateToken(token){
     const payload = jwt.verify(token, SECRET);
     return payload;
 }
+const getUserByName = async(name)=>{
+    const user = await prisma.user.findUnique({where:{userName:name}});
+    if(!user) throwError("No User Found", 400);
+}
 
 module.exports = {
     registerAdmin,

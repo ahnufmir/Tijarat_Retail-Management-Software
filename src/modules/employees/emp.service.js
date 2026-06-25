@@ -1,9 +1,12 @@
 const prisma = require("../../db/prisma");
 const throwError = require("../../utils/errorHandling");
-const { getValidSalesByDateRange, getValidSalesByDateRangeAndId } = require("../sales/sales.service");
+const {
+  getValidSalesByDateRange,
+  getValidSalesByDateRangeAndId,
+} = require("../sales/sales.service");
 
 const createEmployee = async ({
-  userId,
+  userName,
   name,
   phone = null,
   wageType,
@@ -17,7 +20,7 @@ const createEmployee = async ({
   if (existingEmployee) throwError("Employee is already Registered", 400);
   const user = await prisma.user.findUnique({
     where: {
-      id: userId,
+      userName,
     },
   });
   if (!user)
@@ -25,6 +28,7 @@ const createEmployee = async ({
       "Employee is not Registered as User. First Register as User",
       403,
     );
+  const userId = user.id;
   const allowedWageType = ["MONTHLY", "DAILY"];
   if (!allowedWageType.includes(wageType))
     throwError("Wage Type can either be 'MONTHLY' or 'DAILY'", 400);
@@ -67,11 +71,12 @@ const deactivateEmployee = async (name) => {
       isActive: false,
     },
   });
+  return employee
 };
 
 const updateEmployee = async (name, updateData) => {
   const employee = await getEmployeeById(name);
-  if (!employee.isActive === false)
+  if (!employee.isActive)
     throwError("Employee is not active (i.e its deleted).", 400);
 
   const dataToUpdate = {};
@@ -114,10 +119,10 @@ const createCommission = async (
 ) => {
   const employee = await prisma.employee.findUnique({ where: { name } });
   if (!employee)
-    throwError(`Employee with name (${employee.name}) is NOT FOUND`);
+    throwError(`Employee with name (${name}) is NOT FOUND`);
   const empId = employee.id;
   const existingEmployee = await prisma.employeeCommissionRule.findUnique({
-    where: { id: empId },
+    where: { employeeId: empId },
   });
   if (existingEmployee) throwError("Employee is already Registered", 400);
 
@@ -149,11 +154,11 @@ const createCommission = async (
 
 const updateCommissionRule = async (name, updateData) => {
   const employee = await getEmployeeById(name);
-  if (!employee.isActive === false)
+  if (!employee.isActive)
     throwError("Employee is not active (i.e its deleted).", 400);
 
   const emp = await prisma.employee.findUnique({ where: { name } });
-  if (!emp) throwError(`Employee with name (${emp.name}) is NOT FOUND`);
+  if (!emp) throwError(`Employee with name (${name}) is NOT FOUND`);
 
   const empId = emp.id;
 
@@ -218,7 +223,7 @@ const calculateCommission = async (name, startDate, endDate) => {
 
   const getALlSales = await getValidSalesByDateRange(startDate, endDate);
 
-  let commValue;
+  let commValue = 0;
   if (
     emp.commissionType === "PROFIT_PERCENT" ||
     emp.commissionType === "SALE_PERCENT"
@@ -226,16 +231,138 @@ const calculateCommission = async (name, startDate, endDate) => {
     const value = emp.commissionValue / 100;
     if (emp.commissionType === "PROFIT_PERCENT") {
       commValue = value * (getALlSales._sum.totalProfit || 0);
-    } 
-    else if (emp.commissionType === "SALE_PERCENT") {
+    } else if (emp.commissionType === "SALE_PERCENT") {
       commValue = value * (getALlSales._sum.totalAmount || 0);
     }
-  } 
-  else if (emp.commissionType === "FIXED_PER_SALE") {
-    const result = await getValidSalesByDateRangeAndId(empId,startDate,endDate);
-    const salesNumber = result._count.id || 0;
-    commValue = salesNumber*emp.commissionValue || 0;
-
+  } else if (emp.commissionType === "FIXED_PER_SALE") {
+    const result = await getValidSalesByDateRangeAndId(
+      empId,
+      startDate,
+      endDate,
+    );
+    result.forEach((sale) => {
+      const saleItems = sale.saleItems;
+      saleItems.forEach((saleItem) => {
+        const commissionRate = saleItem.product.commissionRate || 0;
+        const quantity = saleItem.quantity;
+        commValue += commissionRate * quantity;
+      });
+    });
+    // const salesNumber = result._count.id || 0;
+    // commValue = salesNumber*emp.commissionValue || 0;
   }
   return commValue;
+};
+
+const createEmployeePayment = async (
+  empName,
+  paymentType,
+  amount,
+  periodStart,
+  periodEnd = null,
+  note = null,
+  createdByName,
+) => {
+  const allowedPaymentType = [
+    "DAILY_WAGE",
+    "MONTHLY_WAGE",
+    "COMMISSION",
+    "BONUS",
+    "ADVANCE",
+    "DEDUCTION",
+  ];
+  const employee = await prisma.employee.findUnique({
+    where: { name: empName },
+  });
+  if (!employee) throwError(`Employee with name (${empName}) Not FOUND!`);
+  const empId = employee.id;
+  const user = await prisma.user.findUnique({
+    where: { userName: createdByName },
+  });
+  if (!user) throwError("No User Found", 400);
+  const userId = user.id;
+  if (!allowedPaymentType.includes(paymentType))
+    throwError("Payment Type is not Valid", 400);
+  if (amount <= 0) throwError("Invalid Amount", 400);
+  const start = new Date(periodStart);
+  start.setHours(0, 0, 0, 0);
+  let end;
+  if (periodEnd) {
+    end = new Date(periodEnd);
+    end.setHours(23, 59, 59, 999);
+  }
+  const employeePayment = await prisma.employeePayment.create({
+    data: {
+      employeeId: empId,
+      paymentType: paymentType,
+      amount,
+      periodStart: start,
+      periodEnd: end,
+      note,
+      createdById: userId,
+    },
+  });
+  return employeePayment;
+};
+
+const getEmployeePayments = async (name) => {
+  const employee = await prisma.employee.findUnique({ where: { name } });
+  if (!employee) throwError("Employee not Found", 400);
+  const empId = employee.id;
+  const empPayments = await prisma.employeePayment.findMany({
+    where: { employeeId: empId },
+  });
+  return empPayments;
+};
+
+const getEmployeePaymentsByDateRange = async (name, startDate, endDate) => {
+  const employee = await prisma.employee.findUnique({ where: { name } });
+  if (!employee) throwError("Employee not Found", 400);
+  const empId = employee.id;
+  const start = new Date(startDate);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(endDate);
+  end.setHours(23, 59, 59, 999);
+  const employeePayments = await prisma.employeePayment.findMany({
+    where: {
+      paymentDate: {
+        gte: start,
+        lte: end,
+      },
+      employeeId: empId,
+    },
+  });
+  return employeePayments;
+};
+
+const getAllEmployeePayments = async (startDate, endDate) => {
+  const start = new Date(startDate);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(endDate);
+  end.setHours(23, 59, 59, 999);
+  const employeePayments = await prisma.employeePayment.findMany({
+    where: {
+      paymentDate: {
+        gte: start,
+        lte: end,
+      },
+    },
+  });
+  return employeePayments;
+};
+
+module.exports = {
+  createEmployee,
+  getAllEmployees,
+  getEmployeeById,
+  deactivateEmployee,
+  updateEmployee,
+  createCommission,
+  updateCommissionRule,
+  getCommissionRules,
+  calculateCommission,
+  createEmployeePayment,
+  getAllEmployeePayments,
+  getEmployeePayments,
+  getEmployeePaymentsByDateRange,
 };

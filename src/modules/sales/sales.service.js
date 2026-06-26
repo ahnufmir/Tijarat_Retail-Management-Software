@@ -30,7 +30,20 @@ const generateInvoice = async (tx) => {
 
 module.exports = generateInvoice;
 
-const createSale = async (paymentMethod, items, userId, note = null) => {
+const createSale = async (paymentMethod, items, userName, note = null) => {
+  // Find user by username
+
+  const user = await prisma.user.findUnique({
+    where: {
+      userName,
+    },
+  });
+
+  if (!user) {
+    throwError("User not found", 404);
+  }
+
+  const userId = user.id;
   let totalProfit = 0;
   let totalAmount = 0;
   let totalCost = 0;
@@ -435,8 +448,9 @@ const returnSale = async (saleInvoice, items, notes = null) => {
     failedItems,
     saleInvoice,
   );
+  let newStatus;
   if (FINALE.length === 0) {
-    throwError("No valid items to return", 400);
+    throwError("ALl Items are RETURNED", 400);
   }
 
   //================================================================================
@@ -456,11 +470,12 @@ const returnSale = async (saleInvoice, items, notes = null) => {
   const newProfit = sale.totalProfit - profit;
   const newCost = sale.totalCost - cost;
   const newAmount = sale.totalAmount - sales;
+  const updatedStatus =
+  newAmount <= 0
+    ? SALESTATUS.RETURNED
+    : SALESTATUS.PARTIAL_RETURN;
   // -----------------------------------
-  const movementType = "SALES_RETURN";
-
-  const newStatus =
-    newAmount <= 0 ? SALESTATUS.RETURNED : SALESTATUS.PARTIAL_RETURN;
+  const movementType = "SALE_RETURN";
 
   const result = await prisma.$transaction(async (tx) => {
     for (let i = 0; i < FINALE.length; i++) {
@@ -474,7 +489,7 @@ const returnSale = async (saleInvoice, items, notes = null) => {
           },
         },
       });
-      await createInventoryMovement(
+      const inventory = await createInventoryMovement(
         {
           productBarcode: barcode,
           quantityChange: quantity,
@@ -490,7 +505,7 @@ const returnSale = async (saleInvoice, items, notes = null) => {
         id: saleId,
       },
       data: {
-        status: newStatus,
+        status: updatedStatus,
         //----------- TO calculate commission
         totalAmount: newAmount,
         totalCost: newCost,
@@ -568,26 +583,26 @@ const getValidSalesByDateRangeAndId = async (id, startDate, endDate) => {
   const end = new Date(endDate);
   end.setHours(23, 59, 59, 999);
   const totalSales = await prisma.sale.findMany({
-  where: {
-    saleDate: {
-      gte: start,
-      lte: end,
+    where: {
+      saleDate: {
+        gte: start,
+        lte: end,
+      },
+      status: {
+        in: ["ACTIVE", "PARTIAL_RETURN"],
+      },
+      userId: id,
     },
-    status: {
-      in: ["ACTIVE", "PARTIAL_RETURN"],
+    include: {
+      saleItems: {
+        include: {
+          product: true,
+        },
+      },
     },
-    userId: id,
-  },
-  include: {
-    saleItems: {
-      include: {
-        product: true
-      }
-    }
-  },
-});
-return totalSales;
-}
+  });
+  return totalSales;
+};
 
 module.exports = {
   createSale,
@@ -598,5 +613,5 @@ module.exports = {
   returnSale,
   getSalesByDateRange,
   getValidSalesByDateRange,
-  getValidSalesByDateRangeAndId 
+  getValidSalesByDateRangeAndId,
 };

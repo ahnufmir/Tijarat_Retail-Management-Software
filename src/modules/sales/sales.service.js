@@ -6,6 +6,7 @@ const {
   getMovementsByType,
 } = require("../inventory/inv.service");
 const { SALESTATUS } = require("@prisma/client");
+const { addCashLedgerEntry } = require("../ledger/ledger.service");
 
 const generateInvoice = async (tx) => {
   const todayStart = new Date();
@@ -191,7 +192,16 @@ const createSale = async (paymentMethod, items, userName, note = null) => {
           },
         },
       });
-
+      await addCashLedgerEntry(
+        {
+          direction: "IN",
+          amount: totalAmount,
+          sourceType: "SALE",
+          sourceId: saleID,
+          note: note,
+        },
+        tx,
+      );
       await createInventoryMovement(
         {
           productBarcode: salesItemArray[i].productBarcode,
@@ -271,6 +281,7 @@ const cancelSale = async (invoice, note) => {
     throwError("Sale is not active", 400);
   }
   const saleId = sale.id;
+  const totalAmount = sale.totalAmount;
   const saleItem = await prisma.saleItem.findMany({
     where: {
       saleId,
@@ -290,6 +301,16 @@ const cancelSale = async (invoice, note) => {
           },
         },
       });
+      await addCashLedgerEntry(
+        {
+          direction: "OUT",
+          amount: totalAmount,
+          sourceType: "CANCEL_SALE",
+          sourceId: saleId,
+          note: note,
+        },
+        tx,
+      );
       await createInventoryMovement(
         {
           productBarcode: barcode,
@@ -471,9 +492,7 @@ const returnSale = async (saleInvoice, items, notes = null) => {
   const newCost = sale.totalCost - cost;
   const newAmount = sale.totalAmount - sales;
   const updatedStatus =
-  newAmount <= 0
-    ? SALESTATUS.RETURNED
-    : SALESTATUS.PARTIAL_RETURN;
+    newAmount <= 0 ? SALESTATUS.RETURNED : SALESTATUS.PARTIAL_RETURN;
   // -----------------------------------
   const movementType = "SALE_RETURN";
 
@@ -489,6 +508,7 @@ const returnSale = async (saleInvoice, items, notes = null) => {
           },
         },
       });
+
       const inventory = await createInventoryMovement(
         {
           productBarcode: barcode,
@@ -512,6 +532,16 @@ const returnSale = async (saleInvoice, items, notes = null) => {
         totalProfit: newProfit,
       },
     });
+    await addCashLedgerEntry(
+      {
+        direction: "OUT",
+        amount: newAmount,
+        sourceType: "RETURN_SALE",
+        sourceId: saleId,
+        note: notes,
+      },
+      tx,
+    );
     return updatedSale;
   });
   return {
@@ -604,6 +634,53 @@ const getValidSalesByDateRangeAndId = async (id, startDate, endDate) => {
   return totalSales;
 };
 
+const getTodaySalesSumAnyAmount = async () => {
+  const currentDate = new Date();
+
+  const startOfDay = new Date(currentDate);
+  startOfDay.setHours(0, 0, 0, 0);
+
+  const sales = await prisma.sale.aggregate({
+    where: {
+      saleDate: {
+        gte: startOfDay,
+        lte: currentDate,
+      },
+    },
+    _sum: {
+      totalAmount: true,
+      totalCost: true,
+      totalProfit: true,
+    },
+  });
+  return sales;
+};
+
+const getValidSalesSumByDateRangeAndId = async (startDate, endDate) => {
+  const start = new Date(startDate);
+  start.setHours(0, 0, 0, 0);
+
+  const end = new Date(endDate);
+  end.setHours(23, 59, 59, 999);
+  const totalSales = await prisma.sale.aggregate({
+    where: {
+      saleDate: {
+        gte: start,
+        lte: end,
+      },
+      status: {
+        in: ["ACTIVE", "PARTIAL_RETURN"],
+      },
+    },
+    _sum: {
+      totalAmount: true,
+      totalCost: true,
+      totalProfit: true,
+    },
+  });
+  return totalSales;
+};
+
 module.exports = {
   createSale,
   getTodaySales,
@@ -614,4 +691,6 @@ module.exports = {
   getSalesByDateRange,
   getValidSalesByDateRange,
   getValidSalesByDateRangeAndId,
+  getTodaySalesSumAnyAmount,
+  getValidSalesSumByDateRangeAndId,
 };

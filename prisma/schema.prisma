@@ -37,7 +37,6 @@ model User {
   employee                Employee?
   employeePaymentsCreated EmployeePayment[]
   expenses                Expense[]
-  cashLedgers             CashLedger[]
 }
 
 // Inventory 
@@ -204,14 +203,12 @@ model EmployeePayment {
 
 // Expenses
 
-enum ExpenseCategory {
-  ELECTRICITY_BILL
-  GAS_BILL
-  RENT
-  MAINTENANCE
-  INTERNET
-  TRANSPORT
-  OTHER
+model ExpenseCategory {
+  id          Int       @id @default(autoincrement())
+  name        String    @unique
+  description String?
+  isDefault   Boolean   @default(false)
+  expenses    Expense[]
 }
 
 enum CashDirection {
@@ -228,34 +225,33 @@ enum CashSourceType {
 }
 
 model Expense {
-  id          Int             @id @default(autoincrement())
-  label       String?
-  amount      Int
-  category    ExpenseCategory
-  note        String?
-  expenseDate DateTime        @default(now())
-  createdById Int
-  createdBy   User            @relation(fields: [createdById], references: [id])
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  id                Int             @id @default(autoincrement())
+  label             String?
+  amount            Int
+  expenseCategoryId Int
+  category          ExpenseCategory @relation(fields: [expenseCategoryId], references: [id])
+  note              String?
+  expenseDate       DateTime        @default(now())
+  createdById       Int
+  createdBy         User            @relation(fields: [createdById], references: [id])
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 
   @@index([expenseDate])
-  @@index([category])
 }
 
 model CashLedger {
-  id          Int            @id @default(autoincrement())
-  direction   CashDirection
-  amount      Int
-  sourceType  CashSourceType
-  sourceId    Int
-  note        String?
-  entryDate   DateTime       @default(now())
-  createdAt   DateTime       @default(now())
-  createdById Int
-  createdBy   User           @relation(fields: [createdById], references: [id])
-  updatedAt   DateTime       @updatedAt
+  id         Int            @id @default(autoincrement())
+  direction  CashDirection
+  amount     Int
+  sourceType CashSourceType
+  sourceId   Int
+  note       String?
+  entryDate  DateTime       @default(now())
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
 
   @@index([entryDate])
   @@index([sourceType, sourceId])
+  @@unique([sourceType, sourceId])
 }

@@ -4,6 +4,7 @@ const {
   getValidSalesByDateRange,
   getValidSalesByDateRangeAndId,
 } = require("../sales/sales.service");
+const { addCashLedgerEntry } = require("../ledger/ledger.service");
 
 const createEmployee = async ({
   userName,
@@ -71,7 +72,7 @@ const deactivateEmployee = async (name) => {
       isActive: false,
     },
   });
-  return employee
+  return employee;
 };
 
 const updateEmployee = async (name, updateData) => {
@@ -118,8 +119,7 @@ const createCommission = async (
   commissionPeriod,
 ) => {
   const employee = await prisma.employee.findUnique({ where: { name } });
-  if (!employee)
-    throwError(`Employee with name (${name}) is NOT FOUND`);
+  if (!employee) throwError(`Employee with name (${name}) is NOT FOUND`);
   const empId = employee.id;
   const existingEmployee = await prisma.employeeCommissionRule.findUnique({
     where: { employeeId: empId },
@@ -302,6 +302,13 @@ const createEmployeePayment = async (
       createdById: userId,
     },
   });
+  await addCashLedgerEntry({
+    direction: "OUT",
+    amount: amount,
+    sourceType: "EMPLOYEE_PAYMENT",
+    sourceId: employeePayment.id,
+    note: note,
+  });
   return employeePayment;
 };
 
@@ -351,6 +358,57 @@ const getAllEmployeePayments = async (startDate, endDate) => {
   return employeePayments;
 };
 
+const getTodayPaymentSum = async () => {
+  const currentDate = new Date();
+  const startOfDay = new Date(currentDate);
+  startOfDay.setHours(0, 0, 0, 0);
+  const payments = await prisma.employeePayment.aggregate({
+    where: {
+      periodStart: {
+        gte: startOfDay,
+        lte: currentDate,
+      },
+    },
+    _sum: {
+      amount: true,
+    },
+  });
+  return payments;
+};
+const getTodayPayments = async () => {
+  const currentDate = new Date();
+  const startOfDay = new Date(currentDate);
+  startOfDay.setHours(0, 0, 0, 0);
+  const payments = await prisma.employeePayment.findMany({
+    where: {
+      periodStart: {
+        gte: startOfDay,
+        lte: currentDate,
+      },
+    },
+  });
+  return payments;
+};
+
+const getEmployeePaymentSumByDateRange = async (startDate, endDate) => {
+  const start = new Date(startDate);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(endDate);
+  end.setHours(23, 59, 59, 999);
+  const employeePayments = await prisma.employeePayment.aggregate({
+    where: {
+      paymentDate: {
+        gte: start,
+        lte: end,
+      },
+    },
+    _sum: {
+      amount: true,
+    },
+  });
+  return employeePayments;
+};
+
 module.exports = {
   createEmployee,
   getAllEmployees,
@@ -364,5 +422,8 @@ module.exports = {
   createEmployeePayment,
   getAllEmployeePayments,
   getEmployeePayments,
+  getTodayPayments,
   getEmployeePaymentsByDateRange,
+  getEmployeePaymentSumByDateRange,
+  getTodayPaymentSum,
 };

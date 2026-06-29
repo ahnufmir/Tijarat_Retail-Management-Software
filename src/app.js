@@ -6,7 +6,8 @@ const router = require("../src/modules/auth/auth.routes");
 const productRouter = require("../src/modules/products/prod.routes");
 const inventoryRouter = require("../src/modules/inventory/inv.routes");
 const salesRouter = require("../src/modules/sales/sales.routes");
-const employeesRouter = require("../src/modules/employees/emp.routes")
+const employeesRouter = require("../src/modules/employees/emp.routes");
+const expenseRouter = require("../src/modules/expenses/exp.routes")
 const { checkForCookieAuhtentication,requireAuth } = require("../src/middlewares/auth");
 const errorMiddleware = require("../src/middlewares/error");
 
@@ -26,6 +27,7 @@ app.use("/v0/products", productRouter);
 app.use("/v0/inventory", inventoryRouter);
 app.use("/v0/sales",salesRouter);
 app.use("/v0/employees", employeesRouter);
+app.use("/v0/expenses", expenseRouter);
 
 // Error handling middleware
 app.use(errorMiddleware);

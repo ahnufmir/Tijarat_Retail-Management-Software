@@ -1,6 +1,7 @@
 const prisma = require("../../db/prisma");
 const throwError = require("../../utils/errorHandling");
 const { createInventoryMovement } = require("../inventory/inv.service");
+const { addCashLedgerEntry } = require("../ledger/ledger.service");
 
 const createProduct = async (
   name,
@@ -48,6 +49,12 @@ const createProduct = async (
     movementType: "INITIAL_STOCK",
     note: note,
   });
+  await addCashLedgerEntry({
+    direction: "OUT",
+    amount: cp * currentQuantity,
+    sourceType: "STOCK_ADDED",
+    sourceId: product.id,
+  });
   return product;
 };
 
@@ -74,17 +81,17 @@ const getProductByBarcode = async (barcode) => {
   const product = await prisma.product.findUnique({
     where: {
       barcode,
-      isActive:true
+      isActive: true,
     },
-    select:{
-      name:true,
-      type:true,
-      color:true,
-      unitSellingPrice:true,
-      unitCostPrice:true,
-      currentQuantity:true,
-      isActive:true
-    }
+    select: {
+      name: true,
+      type: true,
+      color: true,
+      unitSellingPrice: true,
+      unitCostPrice: true,
+      currentQuantity: true,
+      isActive: true,
+    },
   });
   if (!product) throwError("Product doesnot Exists", 400);
   return product;
@@ -95,7 +102,7 @@ const updateProduct = async (barcode, updateData) => {
   if (product.isActive === false)
     throwError(
       "Product is not active (i.e its deleted). Make it active to update",
-       400,
+      400,
     );
 
   const dataToUpdate = {};
@@ -170,6 +177,12 @@ const deleteProduct = async (barcode, note) => {
     movementType: "DELETED",
     note: note,
   });
+  await addCashLedgerEntry({
+    direction:"OUT",
+    amount: deletedProd.currentQuantity*deletedProd.unitCostPrice,
+    sourceType:"MANUAL_ADJUSTMENT",
+    sourceId: deletedProd.id
+  })
   return deletedProd;
 };
 
@@ -199,20 +212,35 @@ const setProductStock = async (barCode, num, movementType, note) => {
     );
   const dataToUpdate = {};
   dataToUpdate.currentQuantity = num;
-  const updatedProduct = await prisma.product.update({
-    where: {
-      barcode: barCode,
-    },
-    data: dataToUpdate,
+  const result = await prisma.$transaction(async (tx) => {
+    const updatedProduct = await tx.product.update({
+      where: {
+        barcode: barCode,
+      },
+      data: dataToUpdate,
+    });
+    const quantityDifference = num - product.currentQuantity;
+    await createInventoryMovement(
+      {
+        productBarcode: updatedProduct.barcode,
+        quantityChange: quantityDifference,
+        movementType: movementType,
+        note: note,
+      },
+      tx,
+    );
+    await addCashLedgerEntry(
+      {
+        direction: "OUT",
+        amount: quantityDifference * updatedProduct.unitCostPrice,
+        sourceType: "MANUAL_ADJUSTMENT",
+        sourceId: updatedProduct.id,
+      },
+      tx,
+    );
+    return updatedProduct;
   });
-  const quantityDifference = num - product.currentQuantity;
-  await createInventoryMovement({
-    productBarcode: updatedProduct.barcode,
-    quantityChange: quantityDifference,
-    movementType: movementType,
-    note: note,
-  });
-  return updatedProduct;
+  return result;
 };
 
 // Requires an admin to do this
@@ -230,19 +258,46 @@ const adjustProductStock = async (barCode, num, movementType, note) => {
   if (newQuantity < 0) {
     throwError("Stock cannot go below zero", 400);
   }
-  const updatedProduct = await prisma.product.update({
-    where: {
-      barcode: barCode,
-    },
-    data: { currentQuantity: newQuantity },
+  let direction;
+  if (num < 0) {
+    if (movementType === "RETURN") {
+      direction = "IN";
+    }
+  } else {
+    if (movementType === "PURCHASE") {
+      direction = "OUT";
+    }
+  }
+  const result = await prisma.$transaction(async (tx) => {
+    const updatedProduct = await tx.product.update({
+      where: {
+        barcode: barCode,
+      },
+      data: { currentQuantity: newQuantity },
+    });
+    await createInventoryMovement(
+      {
+        productBarcode: updatedProduct.barcode,
+        quantityChange: num,
+        movementType: movementType,
+        note: note,
+      },
+      tx,
+    );
+    if (direction) {
+      await addCashLedgerEntry(
+        {
+          direction: direction,
+          amount: Math.abs(num) * updatedProduct.unitCostPrice,
+          sourceType: "MANUAL_ADJUSTMENT",
+          sourceId: updatedProduct.id,
+        },
+        tx,
+      );
+    }
+    return updatedProduct;
   });
-  await createInventoryMovement({
-    productBarcode: updatedProduct.barcode,
-    quantityChange: num,
-    movementType: movementType,
-    note: note,
-  });
-  return updatedProduct;
+  return result;
 };
 
 module.exports = {

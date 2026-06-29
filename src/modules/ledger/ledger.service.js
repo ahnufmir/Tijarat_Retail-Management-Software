@@ -1,5 +1,8 @@
 const prisma = require("../../db/prisma");
 const throwError = require("../../utils/errorHandling");
+const {getAllExpensesSumToday} = require("../expenses/exp.service");
+const {getTodaySalesSumAnyAmount} = require("../sales/sales.service")
+const {getTodayPaymentSum} = require("../employees/emp.service")
 
 const addCashLedgerEntry = async (
   { direction, amount, sourceType, sourceId, note = null },
@@ -54,7 +57,28 @@ const updateCashLedgerEntry = async ({sourceType, sourceId, amount}) => {
   return updateEntry;
 };
 
+const calulcateTodayAnalytics = async() => {
+  const expenses = await getAllExpensesSumToday();
+  const totalExpenses = expenses._sum.amount;
+  const sales = await getTodaySalesSumAnyAmount();
+  const costAmount = sales._sum.totalCost;
+  const salesAmount = sales._sum.totalAmount;
+  const grossProfit = sales._sum.totalProfit;
+  const payments = await getTodayPaymentSum();
+  const totalPayments = payments._sum.amount;
+  const netProfit = grossProfit - totalExpenses - totalPayments;
+  return {
+    costAmount,
+    salesAmount,
+    grossProfit,
+    totalExpenses,
+    totalPayments,
+    netProfit
+  };
+}
+
 module.exports = {
   addCashLedgerEntry,
-  updateCashLedgerEntry
+  updateCashLedgerEntry,
+  calulcateTodayAnalytics
 };

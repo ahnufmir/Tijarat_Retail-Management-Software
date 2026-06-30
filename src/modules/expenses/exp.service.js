@@ -104,6 +104,7 @@ const updateExpense = async (id, updatedData) => {
   });
   if (check) {
     await updateCashLedgerEntry({
+      direction:"OUT",
       sourceType: "EXPENSE",
       sourceId: ifExpense.id,
       amount: updatedData.amount,
@@ -134,6 +135,27 @@ const getAllExpensesSumToday = async () => {
     where: {
       expenseDate: {
         gte: startOfDay,
+        lte: currentDate,
+      },
+    },
+    _sum: {
+      amount: true,
+    },
+  });
+  return expenses;
+};
+const getAllExpensesSumMonth = async () => {
+  const currentDate = new Date();
+
+  const startOfMonth = new Date(
+    currentDate.getFullYear(),
+    currentDate.getMonth(),
+    1,
+  );
+  const expenses = await prisma.expense.aggregate({
+    where: {
+      expenseDate: {
+        gte: startOfMonth,
         lte: currentDate,
       },
     },
@@ -186,4 +208,5 @@ module.exports = {
   getAllExpensesSumbyDateRange,
   getAllExpensesToday,
   getAllExpensesbyDateRange,
+   getAllExpensesSumMonth 
 };

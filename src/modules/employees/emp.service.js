@@ -274,7 +274,7 @@ const createEmployeePayment = async (
   const employee = await prisma.employee.findUnique({
     where: { name: empName },
   });
-  if (!employee) throwError(`Employee with name (${empName}) Not FOUND!`);
+  if (!employee) throwError(`Employee with name (${empName}) Not FOUND! First add this user as Employee`,400);
   const empId = employee.id;
   const user = await prisma.user.findUnique({
     where: { userName: createdByName },
@@ -364,8 +364,29 @@ const getTodayPaymentSum = async () => {
   startOfDay.setHours(0, 0, 0, 0);
   const payments = await prisma.employeePayment.aggregate({
     where: {
-      periodStart: {
+      paymentDate: {
         gte: startOfDay,
+        lte: currentDate,
+      },
+    },
+    _sum: {
+      amount: true,
+    },
+  });
+  return payments;
+};
+const getMonthPaymentSum = async () => {
+  const currentDate = new Date();
+
+  const startOfMonth = new Date(
+    currentDate.getFullYear(),
+    currentDate.getMonth(),
+    1,
+  );
+  const payments = await prisma.employeePayment.aggregate({
+    where: {
+      paymentDate: {
+        gte: startOfMonth,
         lte: currentDate,
       },
     },
@@ -426,4 +447,5 @@ module.exports = {
   getEmployeePaymentsByDateRange,
   getEmployeePaymentSumByDateRange,
   getTodayPaymentSum,
+  getMonthPaymentSum,
 };

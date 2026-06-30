@@ -6,7 +6,10 @@ const {
   getMovementsByType,
 } = require("../inventory/inv.service");
 const { SALESTATUS } = require("@prisma/client");
-const { addCashLedgerEntry } = require("../ledger/ledger.service");
+const {
+  addCashLedgerEntry,
+  updateCashLedgerEntry,
+} = require("../ledger/ledger.service");
 
 const generateInvoice = async (tx) => {
   const todayStart = new Date();
@@ -192,16 +195,6 @@ const createSale = async (paymentMethod, items, userName, note = null) => {
           },
         },
       });
-      await addCashLedgerEntry(
-        {
-          direction: "IN",
-          amount: totalAmount,
-          sourceType: "SALE",
-          sourceId: saleID,
-          note: note,
-        },
-        tx,
-      );
       await createInventoryMovement(
         {
           productBarcode: salesItemArray[i].productBarcode,
@@ -212,7 +205,16 @@ const createSale = async (paymentMethod, items, userName, note = null) => {
         tx,
       );
     }
-
+    await addCashLedgerEntry(
+      {
+        direction: "IN",
+        amount: totalAmount,
+        sourceType: "SALE",
+        sourceId: saleID,
+        note: note,
+      },
+      tx,
+    );
     return sale;
   });
 
@@ -301,16 +303,6 @@ const cancelSale = async (invoice, note) => {
           },
         },
       });
-      await addCashLedgerEntry(
-        {
-          direction: "OUT",
-          amount: totalAmount,
-          sourceType: "CANCEL_SALE",
-          sourceId: saleId,
-          note: note,
-        },
-        tx,
-      );
       await createInventoryMovement(
         {
           productBarcode: barcode,
@@ -330,6 +322,15 @@ const cancelSale = async (invoice, note) => {
         status: SALESTATUS.CANCELLED,
       },
     });
+    await updateCashLedgerEntry(
+      {
+        direction: "OUT",
+        amount: totalAmount,
+        sourceType: "SALE",
+        sourceId: updatedSale.id,
+      },
+      tx,
+    );
     return updatedSale;
   });
   return result;
@@ -532,13 +533,12 @@ const returnSale = async (saleInvoice, items, notes = null) => {
         totalProfit: newProfit,
       },
     });
-    await addCashLedgerEntry(
+    await updateCashLedgerEntry(
       {
-        direction: "OUT",
+        direction: "IN",
         amount: newAmount,
-        sourceType: "RETURN_SALE",
+        sourceType: "SALE",
         sourceId: saleId,
-        note: notes,
       },
       tx,
     );
@@ -646,6 +646,36 @@ const getTodaySalesSumAnyAmount = async () => {
         gte: startOfDay,
         lte: currentDate,
       },
+      status: {
+        in: ["ACTIVE", "PARTIAL_RETURN"],
+      },
+    },
+    _sum: {
+      totalAmount: true,
+      totalCost: true,
+      totalProfit: true,
+    },
+  });
+  return sales;
+};
+const getMonthlySalesSumAnyAmount = async () => {
+  const currentDate = new Date();
+
+  const startOfMonth = new Date(
+    currentDate.getFullYear(),
+    currentDate.getMonth(),
+    1,
+  );
+
+  const sales = await prisma.sale.aggregate({
+    where: {
+      saleDate: {
+        gte: startOfMonth,
+        lte: currentDate,
+      },
+      status: {
+        in: ["ACTIVE", "PARTIAL_RETURN"],
+      },
     },
     _sum: {
       totalAmount: true,
@@ -693,4 +723,5 @@ module.exports = {
   getValidSalesByDateRangeAndId,
   getTodaySalesSumAnyAmount,
   getValidSalesSumByDateRangeAndId,
+  getMonthlySalesSumAnyAmount,
 };

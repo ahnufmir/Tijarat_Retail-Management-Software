@@ -2,6 +2,7 @@ const asynHandler = require("../../utils/asyncHandler");
 const sendResponse = require("../../utils/sendResponse");
 const {
   createSale,
+  validateSale,
   getTodaySales,
   getSaleByInvoice,
   getSaleById,
@@ -34,33 +35,64 @@ function validateInvoiceStructure(invoice) {
   return { valid: true };
 }
 
-const createSaleHandler = asynHandler(async (req, res) => {
-  const { paymentMethod, items, userId, note } = req.body;
-  if (!userId)
-    return sendResponse(
-      res,
-      403,
-      false,
-      "UserId not Found (User is not Registered)",
-    );
-  const allowedPaymentMethods = [
-    "CASH",
-    "CARD",
-    "BANK_TRANSFER",
-    "EASYPAISA",
-    "JAZZCASH",
-    "SADAYPAY",
-    "NAYAPAY",
-    "CREDIT",
-  ];
-  if (!allowedPaymentMethods.includes(paymentMethod)) {
-    return sendResponse(res, 400, false, "Invalid Payment Method");
+const validateSaleHandler = asynHandler(async (req, res) => {
+  const { paymentMethod, items, userName } = req.body;
+
+  if (!paymentMethod || !items || !userName) {
+    return sendResponse(res, 400, false, "Missing required fields");
   }
-  if (paymentMethod == null || items == null)
-    return sendResponse(res, 400, "Payment Method or Sale Items not Found");
-  const saleItems = await createSale(paymentMethod, items, userId, note);
-  return sendResponse(res, 200, true, "Sales Created Successfully", saleItems);
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return sendResponse(res, 400, false, "Items array cannot be empty");
+  }
+
+  const result = await validateSale(paymentMethod, items, userName);
+
+  sendResponse(res, 200, true, "Sale validation completed", result);
 });
+
+const createSaleHandler = asynHandler(async (req, res) => {
+  const { paymentMethod, items, userName, note } = req.body;
+
+  if (!paymentMethod || !userName || !items) {
+    return sendResponse(res, 400, false, "Missing required fields");
+  }
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return sendResponse(res, 400, false, "Items array cannot be empty");
+  }
+
+  const result = await createSale(paymentMethod, items, userName, note);
+
+  sendResponse(res, 201, true, "Sale Created Successfully", result);
+});
+// const createSaleHandler = asynHandler(async (req, res) => {
+//   const { paymentMethod, items, userId, note } = req.body;
+//   if (!userId)
+//     return sendResponse(
+//       res,
+//       403,
+//       false,
+//       "UserId not Found (User is not Registered)",
+//     );
+//   const allowedPaymentMethods = [
+//     "CASH",
+//     "CARD",
+//     "BANK_TRANSFER",
+//     "EASYPAISA",
+//     "JAZZCASH",
+//     "SADAYPAY",
+//     "NAYAPAY",
+//     "CREDIT",
+//   ];
+//   if (!allowedPaymentMethods.includes(paymentMethod)) {
+//     return sendResponse(res, 400, false, "Invalid Payment Method");
+//   }
+//   if (paymentMethod == null || items == null)
+//     return sendResponse(res, 400, "Payment Method or Sale Items not Found");
+//   const saleItems = await createSale(paymentMethod, items, userId, note);
+//   return sendResponse(res, 200, true, "Sales Created Successfully", saleItems);
+// });
 
 const getTodaySalesHandler = asynHandler(async (req, res) => {
   const sales = await getTodaySales();
@@ -83,8 +115,8 @@ const getSalesByDateRangeHandler = asynHandler(async (req, res) => {
   )
     return sendResponse(res, 400, false, "Invalid Date");
 
-  const sales = await getSalesByDateRange(startDate,endDate);
-  return sendResponse(res,200,true,"Sales Fetch Successfully",sales);
+  const sales = await getSalesByDateRange(startDate, endDate);
+  return sendResponse(res, 200, true, "Sales Fetch Successfully", sales);
 });
 
 const getSaleByIdHandler = asynHandler(async (req, res) => {
@@ -135,10 +167,11 @@ const returnSaleHandler = asynHandler(async (req, res) => {
 
 module.exports = {
   createSaleHandler,
+  validateSaleHandler,
   getTodaySalesHandler,
   getSaleByIdHandler,
   getSaleByInvoiceHandler,
   cancelSaleHandler,
   returnSaleHandler,
-  getSalesByDateRangeHandler
+  getSalesByDateRangeHandler,
 };

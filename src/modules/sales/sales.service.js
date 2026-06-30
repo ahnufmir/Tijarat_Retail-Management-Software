@@ -34,9 +34,7 @@ const generateInvoice = async (tx) => {
 
 module.exports = generateInvoice;
 
-const createSale = async (paymentMethod, items, userName, note = null) => {
-  // Find user by username
-
+const validateSale = async (paymentMethod, items, userName) => {
   const user = await prisma.user.findUnique({
     where: {
       userName,
@@ -47,17 +45,7 @@ const createSale = async (paymentMethod, items, userName, note = null) => {
     throwError("User not found", 404);
   }
 
-  const userId = user.id;
-  let totalProfit = 0;
-  let totalAmount = 0;
-  let totalCost = 0;
-
-  let salesItemArray = [];
-  const productsBarcodes = [];
-
-  // =========================
-  // FIX 1: MERGE DUPLICATE PRODUCTS
-  // =========================
+  // Merge duplicate products
   const mergedItemsMap = {};
 
   for (let i = 0; i < items.length; i++) {
@@ -76,31 +64,36 @@ const createSale = async (paymentMethod, items, userName, note = null) => {
 
   const mergedItems = Object.values(mergedItemsMap);
 
-  for (let index = 0; index < mergedItems.length; index++) {
-    productsBarcodes[index] = mergedItems[index].productBarcode;
-  }
+  const productBarcodes = mergedItems.map(
+    (item) => item.productBarcode,
+  );
 
   const products = await prisma.product.findMany({
-    where: { barcode: { in: productsBarcodes } },
+    where: {
+      barcode: {
+        in: productBarcodes,
+      },
+    },
   });
 
   const productMap = {};
+
   for (let i = 0; i < products.length; i++) {
     productMap[products[i].barcode] = products[i];
   }
 
-  // =========================
-  // FEATURE ADDED: PARTIAL PROCESSING (SUCCESS + FAIL TRACKING)
-  // 🟢 NEW FEATURE START
-  // =========================
-  let failedItems = [];
-  let warnings = [];
+  const validItems = [];
+  const failedItems = [];
 
-  for (let index = 0; index < mergedItems.length; index++) {
-    const item = mergedItems[index];
+  let totalAmount = 0;
+  let totalCost = 0;
+  let totalProfit = 0;
+
+  for (let i = 0; i < mergedItems.length; i++) {
+    const item = mergedItems[i];
+
     const product = productMap[item.productBarcode];
 
-    // product not found → mark as failed, do NOT stop execution
     if (!product) {
       failedItems.push({
         productBarcode: item.productBarcode,
@@ -109,122 +102,413 @@ const createSale = async (paymentMethod, items, userName, note = null) => {
       continue;
     }
 
-    const itemQuantity = item.quantity;
-    const itemSellingPrice = item.unitSellingPrice;
-
-    // selling price validation against cost price
-    if (itemSellingPrice < product.unitCostPrice) {
+    if (!product.isActive) {
       failedItems.push({
         productBarcode: item.productBarcode,
-        reason: "Selling price is lower than cost price",
-        costPrice: product.unitCostPrice,
-        sellingPrice: itemSellingPrice,
+        reason: "Product is inactive",
       });
       continue;
     }
 
-    // stock validation → do not throw, just record failure
-    if (itemQuantity > product.currentQuantity) {
+    if (item.quantity <= 0) {
+      failedItems.push({
+        productBarcode: item.productBarcode,
+        reason: "Quantity must be greater than zero",
+      });
+      continue;
+    }
+
+    if (item.unitSellingPrice < product.unitCostPrice) {
+      failedItems.push({
+        productBarcode: item.productBarcode,
+        reason: "Selling price cannot be less than cost price",
+      });
+      continue;
+    }
+
+    if (item.quantity > product.currentQuantity) {
       failedItems.push({
         productBarcode: item.productBarcode,
         reason: "Insufficient stock",
         available: product.currentQuantity,
-        requested: itemQuantity,
+        requested: item.quantity,
       });
       continue;
     }
 
-    const lineTotal = itemSellingPrice * itemQuantity;
-    const lineCost = product.unitCostPrice * itemQuantity;
+    const lineTotal = item.unitSellingPrice * item.quantity;
+    const lineCost = product.unitCostPrice * item.quantity;
+    const lineProfit = lineTotal - lineCost;
 
     totalAmount += lineTotal;
     totalCost += lineCost;
+    totalProfit += lineProfit;
 
-    salesItemArray.push({
+    validItems.push({
       productBarcode: item.productBarcode,
-      quantity: itemQuantity,
-      unitSellingPrice: itemSellingPrice,
+      quantity: item.quantity,
+      unitSellingPrice: item.unitSellingPrice,
       unitCostPrice: product.unitCostPrice,
       lineTotal,
       lineCost,
-      lineProfit: lineTotal - lineCost,
+      lineProfit,
+      productName: product.name,
+      currentQuantity: product.currentQuantity,
     });
   }
 
-  // if nothing is valid → hard stop (important)
-  if (salesItemArray.length === 0) {
+  return {
+    paymentMethod,
+    userId: user.id,
+    validItems,
+    failedItems,
+    totals: {
+      totalAmount,
+      totalCost,
+      totalProfit,
+    },
+    canCreateSale: failedItems.length === 0,
+  };
+};
+
+const createSale = async (
+  paymentMethod,
+  items,
+  userName,
+  note = null,
+) => {
+
+  // First validate
+  const validation = await validateSale(
+    paymentMethod,
+    items,
+    userName,
+  );
+
+  if (validation.validItems.length === 0) {
     throwError("No valid items to create sale", 400);
   }
 
-  totalProfit = totalAmount - totalCost;
+  const {
+    userId,
+    validItems,
+    totals,
+  } = validation;
 
-  // =========================
-  // TRANSACTION (UNCHANGED STRUCTURE)
-  // =========================
   const result = await prisma.$transaction(async (tx) => {
-    const invoice = await generateInvoice(tx); // 🟢 INVOICE GENERATED HERE
+
+    // ======================================
+    // Re-check stock
+    // ======================================
+
+    for (let i = 0; i < validItems.length; i++) {
+
+      const latestProduct = await tx.product.findUnique({
+        where: {
+          barcode: validItems[i].productBarcode,
+        },
+      });
+
+      if (!latestProduct) {
+        throwError(
+          `Product (${validItems[i].productBarcode}) no longer exists`,
+          400,
+        );
+      }
+
+      if (latestProduct.currentQuantity < validItems[i].quantity) {
+        throwError(
+          `${latestProduct.name} stock has changed. Please validate again.`,
+          400,
+        );
+      }
+
+    }
+
+    // ======================================
+    // Create Sale
+    // ======================================
+
+    const invoice = await generateInvoice(tx);
+
     const sale = await tx.sale.create({
       data: {
         userId,
         paymentMethod,
-        totalAmount,
-        totalCost,
-        totalProfit,
+        totalAmount: totals.totalAmount,
+        totalCost: totals.totalCost,
+        totalProfit: totals.totalProfit,
         invoice,
         status: "ACTIVE",
       },
     });
 
-    const saleID = sale.id;
+    // ======================================
+    // Sale Items
+    // ======================================
 
-    const finalSalesItems = salesItemArray.map((item) => ({
-      ...item,
-      saleId: saleID,
+    const saleItems = validItems.map(item => ({
+      saleId: sale.id,
+      productBarcode: item.productBarcode,
+      quantity: item.quantity,
+      unitSellingPrice: item.unitSellingPrice,
+      unitCostPrice: item.unitCostPrice,
+      lineTotal: item.lineTotal,
+      lineCost: item.lineCost,
+      lineProfit: item.lineProfit,
     }));
 
     await tx.saleItem.createMany({
-      data: finalSalesItems,
+      data: saleItems,
     });
 
-    for (let i = 0; i < salesItemArray.length; i++) {
+    // ======================================
+    // Inventory
+    // ======================================
+
+    for (let i = 0; i < validItems.length; i++) {
+
       await tx.product.update({
-        where: { barcode: salesItemArray[i].productBarcode },
+        where: {
+          barcode: validItems[i].productBarcode,
+        },
         data: {
           currentQuantity: {
-            decrement: salesItemArray[i].quantity,
+            decrement: validItems[i].quantity,
           },
         },
       });
+
       await createInventoryMovement(
         {
-          productBarcode: salesItemArray[i].productBarcode,
-          quantityChange: -salesItemArray[i].quantity,
+          productBarcode: validItems[i].productBarcode,
+          quantityChange: -validItems[i].quantity,
           movementType: "SALE",
-          note: note,
+          note,
         },
         tx,
       );
+
     }
+
+    // ======================================
+    // Cash Ledger
+    // ======================================
+
     await addCashLedgerEntry(
       {
         direction: "IN",
-        amount: totalAmount,
+        amount: totals.totalAmount,
         sourceType: "SALE",
-        sourceId: saleID,
-        note: note,
+        sourceId: sale.id,
+        note,
       },
       tx,
     );
+
     return sale;
+
   });
 
-  // 🟢 NEW FEATURE END: attach warnings to response
   return {
     sale: result,
-    warnings,
-    failedItems,
+    failedItems: validation.failedItems,
   };
+
 };
+
+
+// const createSale = async (paymentMethod, items, userName, note = null) => {
+//   // Find user by username
+
+//   const user = await prisma.user.findUnique({
+//     where: {
+//       userName,
+//     },
+//   });
+
+//   if (!user) {
+//     throwError("User not found", 404);
+//   }
+
+//   const userId = user.id;
+//   let totalProfit = 0;
+//   let totalAmount = 0;
+//   let totalCost = 0;
+
+//   let salesItemArray = [];
+//   const productsBarcodes = [];
+
+//   // =========================
+//   // FIX 1: MERGE DUPLICATE PRODUCTS
+//   // =========================
+//   const mergedItemsMap = {};
+
+//   for (let i = 0; i < items.length; i++) {
+//     const item = items[i];
+
+//     if (!mergedItemsMap[item.productBarcode]) {
+//       mergedItemsMap[item.productBarcode] = {
+//         productBarcode: item.productBarcode,
+//         quantity: item.quantity,
+//         unitSellingPrice: item.unitSellingPrice,
+//       };
+//     } else {
+//       mergedItemsMap[item.productBarcode].quantity += item.quantity;
+//     }
+//   }
+
+//   const mergedItems = Object.values(mergedItemsMap);
+
+//   for (let index = 0; index < mergedItems.length; index++) {
+//     productsBarcodes[index] = mergedItems[index].productBarcode;
+//   }
+
+//   const products = await prisma.product.findMany({
+//     where: { barcode: { in: productsBarcodes } },
+//   });
+
+//   const productMap = {};
+//   for (let i = 0; i < products.length; i++) {
+//     productMap[products[i].barcode] = products[i];
+//   }
+
+//   // =========================
+//   // FEATURE ADDED: PARTIAL PROCESSING (SUCCESS + FAIL TRACKING)
+//   // 🟢 NEW FEATURE START
+//   // =========================
+//   let failedItems = [];
+//   let warnings = [];
+
+//   for (let index = 0; index < mergedItems.length; index++) {
+//     const item = mergedItems[index];
+//     const product = productMap[item.productBarcode];
+
+//     // product not found → mark as failed, do NOT stop execution
+//     if (!product) {
+//       failedItems.push({
+//         productBarcode: item.productBarcode,
+//         reason: "Product not found",
+//       });
+//       continue;
+//     }
+
+//     const itemQuantity = item.quantity;
+//     const itemSellingPrice = item.unitSellingPrice;
+
+//     // selling price validation against cost price
+//     if (itemSellingPrice < product.unitCostPrice) {
+//       failedItems.push({
+//         productBarcode: item.productBarcode,
+//         reason: "Selling price is lower than cost price",
+//         costPrice: product.unitCostPrice,
+//         sellingPrice: itemSellingPrice,
+//       });
+//       continue;
+//     }
+
+//     // stock validation → do not throw, just record failure
+//     if (itemQuantity > product.currentQuantity) {
+//       failedItems.push({
+//         productBarcode: item.productBarcode,
+//         reason: "Insufficient stock",
+//         available: product.currentQuantity,
+//         requested: itemQuantity,
+//       });
+//       continue;
+//     }
+
+//     const lineTotal = itemSellingPrice * itemQuantity;
+//     const lineCost = product.unitCostPrice * itemQuantity;
+
+//     totalAmount += lineTotal;
+//     totalCost += lineCost;
+
+//     salesItemArray.push({
+//       productBarcode: item.productBarcode,
+//       quantity: itemQuantity,
+//       unitSellingPrice: itemSellingPrice,
+//       unitCostPrice: product.unitCostPrice,
+//       lineTotal,
+//       lineCost,
+//       lineProfit: lineTotal - lineCost,
+//     });
+//   }
+
+//   // if nothing is valid → hard stop (important)
+//   if (salesItemArray.length === 0) {
+//     throwError("No valid items to create sale", 400);
+//   }
+
+//   totalProfit = totalAmount - totalCost;
+
+//   // =========================
+//   // TRANSACTION (UNCHANGED STRUCTURE)
+//   // =========================
+//   const result = await prisma.$transaction(async (tx) => {
+//     const invoice = await generateInvoice(tx); // 🟢 INVOICE GENERATED HERE
+//     const sale = await tx.sale.create({
+//       data: {
+//         userId,
+//         paymentMethod,
+//         totalAmount,
+//         totalCost,
+//         totalProfit,
+//         invoice,
+//         status: "ACTIVE",
+//       },
+//     });
+
+//     const saleID = sale.id;
+
+//     const finalSalesItems = salesItemArray.map((item) => ({
+//       ...item,
+//       saleId: saleID,
+//     }));
+
+//     await tx.saleItem.createMany({
+//       data: finalSalesItems,
+//     });
+
+//     for (let i = 0; i < salesItemArray.length; i++) {
+//       await tx.product.update({
+//         where: { barcode: salesItemArray[i].productBarcode },
+//         data: {
+//           currentQuantity: {
+//             decrement: salesItemArray[i].quantity,
+//           },
+//         },
+//       });
+//       await createInventoryMovement(
+//         {
+//           productBarcode: salesItemArray[i].productBarcode,
+//           quantityChange: -salesItemArray[i].quantity,
+//           movementType: "SALE",
+//           note: note,
+//         },
+//         tx,
+//       );
+//     }
+//     await addCashLedgerEntry(
+//       {
+//         direction: "IN",
+//         amount: totalAmount,
+//         sourceType: "SALE",
+//         sourceId: saleID,
+//         note: note,
+//       },
+//       tx,
+//     );
+//     return sale;
+//   });
+
+//   // 🟢 NEW FEATURE END: attach warnings to response
+//   return {
+//     sale: result,
+//     warnings,
+//     failedItems,
+//   };
+// };
 
 const getTodaySales = async () => {
   const currentDate = new Date();
@@ -712,6 +996,7 @@ const getValidSalesSumByDateRangeAndId = async (startDate, endDate) => {
 };
 
 module.exports = {
+  validateSale,
   createSale,
   getTodaySales,
   getSaleById,
